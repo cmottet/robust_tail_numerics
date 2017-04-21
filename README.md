@@ -6,7 +6,7 @@
 This repositary is a companion to the paper Tail Analysis without Parametric Models: A Worst-case Perspective by Lam H.,
 and Mottet C.. Here are made available ALL the tables, the datasets, and the figures given in the section discussing
 numerical findings (Section 7). These results were generated using python. For
-transparency and reproducibility purposes, the R-codes used in the computations are also made available.
+transparency and reproducibility purposes, the python codes used in the computations are also made available.
 
 We point out that these codes rely on functions available in the python packages robust_tail and distribution_pty (see
 installation detail below), that we also developed. The motivation for building separate packages is to have readable,
