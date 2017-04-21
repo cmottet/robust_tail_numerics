@@ -1,0 +1,110 @@
+# Clear the sytem of all paste variables
+def clear_all():
+    all = [var for var in globals() if "__" not in (var[:2], var[-2:])]
+    for var in all:
+        del globals()[var]
+
+clear_all()
+
+
+import pickle
+import pandas as pd
+import numpy as np
+import robust_tail
+from distribution_pty import expon
+from numpy import (log, exp)
+from python.extras import fit_mixture_pareto_2PLT
+from scipy.stats import pareto
+
+#
+# Parameters of program 5
+#
+scale = 1
+a = expon.ppf(q=0.7, scale=scale)
+beta = 1 - expon.dcdf(x=a, d=0, scale=scale)
+eta = expon.dcdf(x=a, d=1, scale=scale)
+nu = -expon.dcdf(x=a, d=2, scale=scale)
+
+mu = eta/nu
+sigma = 2*beta/nu
+
+#
+# Load the optimal upper bound of Program 5 in the case
+# when h is the entropic risk measure and the underlying
+# distribution is a standard exponential and create the
+# data frame used for the plot
+#
+file = open("data/runEntropyExpDist.data", "r")
+optim_bound = pickle.load(file)
+file.close()
+
+term1 = optim_bound['term1']
+theta = optim_bound['theta']
+
+# Worst-case entropy risk measure (reformating for plot)
+entropy_worst_case = optim_bound[['theta', 'bound']]\
+    .assign(Method="Optimal Upper Bound")\
+    .rename(columns={'bound': 'value'})
+
+# Entropic risk measure value for the true standard exponential distribution
+entropy_standard_expon = pd.DataFrame({'theta': theta,
+                                       'value': -1/theta*log(theta + 1),
+                                       'Method': "Exponential Density"})
+
+# Entropic risk measure value for some 2-PLT feasible solution of program (2)
+P = robust_tail.get_distribution(mu, sigma, x1=mu/5)
+
+def f(theta):
+    H = lambda x: exp(-theta*a)/theta**2*(theta*x + exp(-theta*x) - 1)
+    x = P.x
+    p = P.p
+    return nu*(p[0]*H(x[0]) + p[1]*H(x[1]))
+
+
+term2 = pd.Series([f(Theta) for Theta in theta])
+entropy_2PLT = pd.DataFrame({'theta': theta,
+                                   'value': 1/theta*log(term1 + term2),
+                                   'Method': "2-PLT"
+                                   })
+
+# Entropic risk measure value for some mixture of shifted pareto and 2-PLT feasible solution of program (2)
+mixture = fit_mixture_pareto_2PLT(a, nu, eta, beta)
+H = lambda x: exp(-theta*a)/theta**2*(theta*x + exp(-theta*x) - 1)
+x = mixture['PLT']['x']
+p = mixture['PLT']['p']
+term2_PLT = nu*(p[0]*H(x[0]) + p[1]*H(x[1]))
+
+np.random.seed(100)
+x = pareto.rvs(size=10**5, scale=mixture['Pareto']['scale'], b=mixture['Pareto']['shape'])
+
+term2_pareto = pd.Series([np.mean(exp(-Theta * x) * (x >= a)) for Theta in theta])
+term2 = mixture['PLT']['w']*term2_PLT + mixture['Pareto']['w']*term2_pareto
+
+
+entropy_pareto_PLT = pd.DataFrame({'theta': theta,
+                                   'value': 1/theta*log(term1 + term2),
+                                   'Method': "Mixture of Pareto and 2-PLT"
+                                   })
+
+data_plot = entropy_worst_case\
+    .append(entropy_standard_expon, ignore_index=True)\
+    .append(entropy_pareto_PLT, ignore_index=True)\
+    .append(entropy_2PLT, ignore_index=True)
+
+#sns.set_style("darkgrid")
+
+#http://matplotlib.org/examples/lines_bars_and_markers/linestyles.html
+linestyle = [(0, ()), (0, (1, 1)), (0, (5, 1)), (0, (5, 5))]
+methods = data_plot['Method'].unique()
+
+ax = None
+for i in range(methods.size):
+   ax = data_plot\
+       .query('Method == "' + methods[i] + '"')\
+       .plot(ax=ax, x='theta', y='value', linestyle=linestyle[i], color='k')
+
+ax.set_xlabel(r"$\theta$")
+ax.set_ylabel("Entropic Risk")
+ax.tick_params(labelsize=14, labelcolor="black")
+#ax.grid(True)
+ax.legend(labels=methods, title="Method")
